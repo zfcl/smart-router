@@ -1,0 +1,44 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test with race detector
+        run: go test -race ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Build Windows x64 GUI
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: 0
+        run: go build -trimpath -ldflags="-s -w -H=windowsgui" -o Smart-Router.exe .
+      - name: Build Windows x64 console diagnostic
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: 0
+        run: go build -trimpath -ldflags="-s -w" -o Smart-Router-console.exe .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Smart-Router-windows-amd64
+          path: |
+            Smart-Router.exe
+            Smart-Router-console.exe
+            README.md
+            快速开始.txt
