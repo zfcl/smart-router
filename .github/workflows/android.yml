@@ -1,0 +1,74 @@
+name: android-arm64
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - '*.go'
+      - 'go.mod'
+      - 'web/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Test shared Go routing core
+        run: go test ./...
+
+      - name: Build Android arm64 Go core
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildmode=pie -ldflags='-s -w' -o android/app/src/main/jniLibs/arm64-v8a/libsmart_router_exec.so .
+          file android/app/src/main/jniLibs/arm64-v8a/libsmart_router_exec.so
+
+      - name: Build installable APK
+        run: gradle -p android :app:assembleDebug --stacktrace
+
+      - name: Prepare APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk Smart-Router-Android-arm64-v1.1.0.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Smart-Router-Android-arm64-v1.1.0
+          path: Smart-Router-Android-arm64-v1.1.0.apk
+
+      - name: Publish Android v1.1.0 release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view android-v1.1.0 >/dev/null 2>&1; then
+            gh release upload android-v1.1.0 Smart-Router-Android-arm64-v1.1.0.apk --clobber
+          else
+            gh release create android-v1.1.0 Smart-Router-Android-arm64-v1.1.0.apk \
+              --target "$GITHUB_SHA" \
+              --title 'Smart Router Android v1.1.0' \
+              --notes 'Android arm64-v8a build for Smart Router. Native Android foreground service + the same Go routing/proxy core used by desktop. Minimum Android 8.0.'
+          fi
