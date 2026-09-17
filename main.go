@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-//go:embed web/index.html
+//go:embed web/*
 var webFS embed.FS
 
 func jsonWrite(w http.ResponseWriter, status int, v any) {
@@ -29,16 +29,25 @@ func readJSON(r *http.Request, v any) error {
 }
 
 func (a *App) dashboardHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+	path := ""
+	contentType := ""
+	switch r.URL.Path {
+	case "/":
+		path, contentType = "web/index.html", "text/html; charset=utf-8"
+	case "/style.css":
+		path, contentType = "web/style.css", "text/css; charset=utf-8"
+	case "/app.js":
+		path, contentType = "web/app.js", "text/javascript; charset=utf-8"
+	default:
 		http.NotFound(w, r)
 		return
 	}
-	b, err := webFS.ReadFile("web/index.html")
+	b, err := webFS.ReadFile(path)
 	if err != nil {
 		http.Error(w, "dashboard unavailable", 500)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(b)
 }
@@ -265,7 +274,7 @@ func securityHeaders(next http.Handler, port int) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'")
 		next.ServeHTTP(w, r)
 	})
 }
