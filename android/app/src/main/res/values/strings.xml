@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Smart Router</string>
+    <string name="notification_channel_name">Smart Router</string>
+</resources>
