@@ -1,0 +1,31 @@
+let STATE=null;
+const $=id=>document.getElementById(id);
+function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function num(v,d=2){return Number.isFinite(+v)?(+v).toFixed(d):'—'}
+function money(v){return Number.isFinite(+v)?'$'+(+v).toFixed(v<1?3:2):'—'}
+function pct(v){return Number.isFinite(+v)?(+v*100).toFixed(2)+'%':'—'}
+function showNotice(msg){const n=$('notice');n.textContent=msg;n.classList.toggle('show',!!msg)}
+function primaryRow(){return STATE?.decision?.rows?.find(r=>r.eligible&&r.provider===STATE.decision.primary)||STATE?.decision?.rows?.find(r=>r.eligible)}
+async function loadState(){try{const r=await fetch('/api/state',{cache:'no-store'});STATE=await r.json();render()}catch(e){showNotice('Router state unavailable: '+e.message)}}
+function render(){
+  $('version').textContent='v'+STATE.version;
+  $('baseUrl').textContent=STATE.base_url;$('modelName').textContent=STATE.config.model;
+  const p=primaryRow();
+  if(p){$('heroProvider').innerHTML=esc(p.provider)+' <span class="accent">leads now.</span>';$('heroScore').textContent=num(p.score,3);$('heroReason').textContent=`Estimated ${num(STATE.decision.input_tokens,0)} input / ${num(STATE.decision.output_tokens,0)} output tokens. ${STATE.endpoint_count} endpoints observed.`;$('mPrice').textContent=money(p.completion_per_m);$('mSpeed').textContent=num(p.throughput_p90,0);$('mLatency').textContent=num(p.latency_p90,2)+'s';$('mReliability').textContent=pct(p.reliability)}
+  else{$('heroProvider').innerHTML='Waiting for <span class="accent">provider data.</span>';$('heroScore').textContent='—';$('mPrice').textContent=$('mSpeed').textContent=$('mLatency').textContent=$('mReliability').textContent='—'}
+  if(!STATE.key_ready) showNotice('Provider telemetry is not loaded yet. Paste an OpenRouter key under Integration, or send the first request through the router.'); else showNotice('');
+  const rows=STATE.decision?.rows||[];
+  $('overviewRows').innerHTML=rows.filter(r=>r.eligible).slice(0,6).map((r,i)=>`<tr><td><span class="rank">${String(i+1).padStart(2,'0')}</span>${esc(r.provider)}${r.pareto?'<span class="tag">PARETO</span>':''}</td><td class="score">${num(r.score,3)}</td><td>${money(r.completion_per_m)}</td><td>${num(r.throughput_p90,0)}</td><td>${num(r.latency_p90,2)}s</td><td>${pct(r.reliability)}</td><td>${num(r.effective_time_seconds,1)}s</td></tr>`).join('')||'<tr><td colspan="7" class="dim">No route calculated yet.</td></tr>';
+  $('providerRows').innerHTML=rows.map((r,i)=>`<tr class="${r.eligible?'':'dim'}"><td><span class="rank">${String(i+1).padStart(2,'0')}</span>${esc(r.provider)}${r.pareto&&r.eligible?'<span class="tag">PARETO</span>':''}</td><td class="score">${num(r.score,3)}</td><td>${money(r.prompt_per_m)}</td><td>${money(r.completion_per_m)}</td><td>${num(r.throughput_p50,0)}</td><td>${num(r.throughput_p90,0)}</td><td>${num(r.latency_p50,2)}s</td><td>${num(r.latency_p90,2)}s</td><td>${num(r.jitter,2)}</td><td class="${r.eligible?'good':'bad'}" title="${esc(r.exclusion_reason)}">${r.eligible?'YES':'NO'}</td></tr>`).join('')||'<tr><td colspan="10" class="dim">No endpoint data.</td></tr>';
+  $('logRows').innerHTML=(STATE.logs||[]).slice().reverse().map(l=>`<div class="log"><span>${new Date(l.at).toLocaleTimeString()}</span><span class="lvl ${esc(l.level)}">${esc(l.level)}</span><span>${esc(l.message)}</span></div>`).join('')||'<div class="log"><span>—</span><span class="lvl">INFO</span><span>No events yet.</span></div>';
+  const c=STATE.config;$('cfgModel').value=c.model;$('cfgRefresh').value=c.refresh_seconds;$('wCost').value=Math.round(c.weights.cost*100);$('wTime').value=Math.round(c.weights.time*100);$('wStability').value=Math.round(c.weights.stability*100);$('wReliability').value=Math.round(c.weights.reliability*100);$('maxPrompt').value=c.max_prompt_price_per_m;$('maxCompletion').value=c.max_completion_price_per_m;$('defaultOutput').value=Math.round(c.default_output_tokens);updateSliderLabels();
+}
+function updateSliderLabels(){$('refreshVal').textContent=$('cfgRefresh').value+'s';$('costVal').textContent=$('wCost').value;$('timeVal').textContent=$('wTime').value;$('stabVal').textContent=$('wStability').value;$('relVal').textContent=$('wReliability').value}
+['cfgRefresh','wCost','wTime','wStability','wReliability'].forEach(id=>document.addEventListener('input',e=>{if(e.target.id===id)updateSliderLabels()}));
+async function refreshProviders(){showNotice('Refreshing provider telemetry…');try{const r=await fetch('/api/refresh',{method:'POST'});const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);await loadState()}catch(e){showNotice('Refresh failed: '+e.message)}}
+async function setKey(){const key=$('keyInput').value.trim();if(!key)return;const r=await fetch('/api/session-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});if(r.ok){$('keyInput').value='';await refreshProviders()}else{showNotice('Could not load key')}}
+async function saveSettings(){const c={model:$('cfgModel').value.trim(),port:STATE.config.port,refresh_seconds:+$('cfgRefresh').value,max_prompt_price_per_m:+$('maxPrompt').value,max_completion_price_per_m:+$('maxCompletion').value,default_output_tokens:+$('defaultOutput').value,weights:{cost:+$('wCost').value,time:+$('wTime').value,stability:+$('wStability').value,reliability:+$('wReliability').value}};const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});const j=await r.json();if(!r.ok){showNotice(j.error||'Save failed');return}showNotice(j.message);setTimeout(loadState,400)}
+async function copyText(id){const t=$(id).textContent;await navigator.clipboard.writeText(t)}
+async function stopRouter(){if(!confirm('Stop the local router now?'))return;await fetch('/api/stop',{method:'POST'});showNotice('Router stopped. You can close this page.')}
+document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));$(b.dataset.view).classList.add('active')}));
+loadState();setInterval(loadState,5000);
