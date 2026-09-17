@@ -1,0 +1,2 @@
+-keep class fi.iki.elonen.** { *; }
+-dontwarn org.slf4j.**
