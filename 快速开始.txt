@@ -1,0 +1,32 @@
+Smart Router v1.0.1 — 快速开始
+
+1. 双击 Smart-Router.exe
+   浏览器会自动打开本地控制台：http://127.0.0.1:8787
+
+2. Zcode 只改这三项
+   Base URL: http://127.0.0.1:8787/v1
+   Model:    z-ai/glm-5.3-flash
+   API Key:  继续使用你原来的 OpenRouter API Key
+
+3. 开始使用
+   第一次 Zcode 请求会把 API Key 仅加载到 Router 内存，用来查询 OpenRouter Provider 实时数据。
+   也可以在 Dashboard 的 Integration 页面提前加载 Key；两种方式都不会写入磁盘。
+   Router 不记录你的 prompt / response 内容。
+
+默认算法
+- Cost 45%
+- Completion Time 30%
+- Reliability Risk 15%
+- Tail Stability 10%
+- 先做 Pareto 支配检查，再做对数空间几何效用评分
+- 默认安全上限：输入 $0.20/M，输出 $0.60/M
+- provider.order 使用 OpenRouter 官方 provider slug
+- OpenRouter Provider 失败时保留 fallback
+
+停止
+- Dashboard → Logs → Stop router
+- 如果使用 Console 版，直接关闭黑色命令行窗口也可以。
+
+排错
+- 正常使用：Smart-Router.exe
+- 看启动错误：Smart-Router-console.exe
