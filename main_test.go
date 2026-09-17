@@ -107,3 +107,50 @@ func TestSessionKeyIsForwardedWhenClientOmitsAuthorization(t *testing.T) {
 		t.Fatalf("unexpected upstream path %q", gotPath)
 	}
 }
+
+func TestIncompleteStreamIsNotCountedAsSuccess(t *testing.T) {
+	a := newAppWithTarget("http://127.0.0.1:1")
+	a.observe("provider-x", http.StatusOK, 0.5, 1000, false)
+	a.mu.RLock()
+	s := a.local["provider-x"]
+	a.mu.RUnlock()
+	if s.Successes != 0 || s.Failures != 0 || s.EWMAE2E != 0 {
+		t.Fatalf("incomplete client-cancelled stream must be neutral, got %+v", s)
+	}
+	a.observe("provider-x", http.StatusOK, 0.5, 1000, true)
+	a.mu.RLock()
+	s = a.local["provider-x"]
+	a.mu.RUnlock()
+	if s.Successes != 1 || s.EWMAE2E <= 0 {
+		t.Fatalf("complete success was not recorded: %+v", s)
+	}
+}
+
+func TestSecurityHeadersBlocksCrossSiteAndRebinding(t *testing.T) {
+	h := securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }), 8787)
+
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8787/api/stop", nil)
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "https://evil.example")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("cross-site origin should be blocked, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8787/v1/chat/completions", nil)
+	req.Host = "evil.example:8787"
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("DNS-rebinding host should be blocked, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "http://127.0.0.1:8787/api/state", nil)
+	req.Host = "127.0.0.1:8787"
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("local request should pass, got %d", w.Code)
+	}
+}
